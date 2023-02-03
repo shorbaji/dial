@@ -1,5 +1,9 @@
 use std::collections::HashMap;
 
+// 
+// Cloud
+// 
+// 
 struct Cloud {
     machines: HashMap<String, Machine>,
     users: HashMap<i128, User>,
@@ -37,7 +41,16 @@ impl Cloud {
     }
 }
 
+// 
+// User
+// 
+// 
 type User = String;
+
+// 
+// Machine
+// 
+// 
 struct Machine {
     name: String,
     global_env: Env,
@@ -67,6 +80,12 @@ impl Machine {
     }
 }
 }
+
+// 
+// Env
+// 
+// 
+
 struct Env {
     map: Vec<(String, Value)>,
     parent: Option<Box<Env>>,
@@ -98,6 +117,11 @@ impl Env {
     }
 }
 
+// 
+// Program and Exp
+// 
+// 
+
 type Program = Vec<Exp>;
 
 enum Exp {
@@ -108,8 +132,24 @@ enum Exp {
     KeywordSet,
     Number(Number),
     Symbol(String),
+    Pair(Pair)
 }
 
+struct Pair{
+    car: Box<Exp>,
+    cdr: Box<Exp>,
+}
+
+impl Pair{
+    fn car(&self) -> &Exp {
+        &*self.car
+    }
+}
+
+// 
+// Value
+// 
+// 
 #[derive(Clone)]
 enum Number {
     Exact(i128, Option<i128>),
@@ -124,30 +164,13 @@ enum Value{
     Number(Number),
     String(String),
     //    Proc(Proc),
-//    String(Box<String>),
 }
 
-// fn print(exp: Box<Exp>) -> String{
-//     match *exp {
-//         Exp::Number(n) => fmt!("{}", n),
-//         _ => String::from("don't know how to print")
-
-
-//     }
-// }
-
-
-// struct Pair<'a> {
-//     car: &'a Exp,
-//     cdr: &'a Exp,
-// }
-
-// impl <'a> Pair<'a> {
-//     fn car(&self) -> Result<&Exp, &'static str> {
-//         Ok(self.car)
-//     }
-// }
-
+impl Value {
+    fn print(&self, value: Value) -> String {
+        String::from("print placeholder")
+    }
+}
 
 fn main() {
     // big bang
