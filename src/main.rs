@@ -32,13 +32,18 @@ impl Cloud {
         self.machines.insert(name.to_string(), machine);
     }
 
+    fn delete_machine(&mut self, name: &str) {}
+
     fn get_mut_machine(&mut self, name: &str) -> Option<&mut Machine> {
         self.machines.get_mut(&name.to_string())
     }
 
-    fn compute(&mut self, name: &str, program: Program) {
-        self.get_mut_machine(name).expect("can't find machine").compute(program);
+    fn compute(&mut self, user_name: &str, machine_name: &str, program: Program) {
+        self.get_mut_machine(machine_name).expect("can't find machine").compute(program);
     }
+
+    fn create_user(&mut self, name: &str) {}
+
 }
 
 // 
@@ -176,13 +181,19 @@ fn main() {
     // big bang
     let mut cloud: Cloud = Cloud::new();
 
+    // first users
+
+    cloud.create_user("core");
+    cloud.create_user("shorbaji");
+
     // first machines 
     cloud.create_machine("core");
     cloud.create_machine("shorbaji");
 
+
     // first eval
     let program = vec!(Exp::Number(Number::Exact(42, None)));
 
-    cloud.compute("core", program);
+    cloud.compute("core", "core", program);
 
 }
