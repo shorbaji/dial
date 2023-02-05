@@ -1,43 +1,141 @@
 use std::collections::HashMap;
 
 // 
-// Cloud
+// Value
 // 
 // 
-struct Cloud {
-    machines: HashMap<String, Machine>,
-    users: HashMap<i128, User>,
+#[derive(Copy, Clone)]
+enum Number {
+    Exact(i128, Option<i128>),
+    Inexact(f64),
 }
 
-impl Default for Cloud {
-    fn default() -> Self {
-        Self {
-            machines: HashMap::new(),
-            users: HashMap::new(),
+impl std::fmt::Display for Number {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Number::Exact(n, d) => match d {
+                Some(d) => write!(f, "{}/{}", n, d),
+                None => write!(f, "{}", n),
+            },
+            Number::Inexact(n) => write!(f, "{}", n),
         }
     }
 }
 
-impl Cloud {
+#[derive(Copy, Clone)]
+enum Value<'a> {
+    Char(char),
+    False,
+    KeywordBegin,
+    KeywordIf,
+    KeywordLambda,
+    KeywordQuote,
+    KeywordSet,
+    Nil,
+    Number(Number),
+    String(&'static str),
+    Symbol(&'a str),
+    True,
+    //    Proc(Proc),
+}
+
+impl<'a> std::fmt::Display for Value<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Char(a) => write!(f, "{}", a),
+            Value::False => write!(f, "f"),
+            Value::Nil => write!(f, "nil"),
+            Value::Number(a) => write!(f, "{}", a),
+            Value::String(a) => write!(f, "{}", a),
+            Value::Symbol(a) => write!(f, "{}", a),
+            Value::True => write!(f, "f"),
+            _ => write!(f, "to be displayed"),
+        }
+    }
+}
+
+impl<'a> Value<'a> {
+    fn is_true(self) -> bool {
+        match self {
+            Value::Nil | Value::False => false,
+            _ => true,
+        }
+    }
+
+}
+
+// 
+// Program and Exp
+// 
+// 
+
+type _Program<'a>= Vec<Expr<'a>>;
+
+enum Expr<'a> {
+    Atom(Value<'a>),
+    Pair(Box<Expr<'a>>, Box<Expr<'a>>)
+}
+
+impl<'a> Expr<'a> {
+
+    fn cons(a: Expr<'a>, b: Expr<'a>) -> Self {
+        Expr::Pair(Box::new(a), Box::new(b))
+    }
+
+    fn car(&self) -> Result<&Expr, &'static str> {
+        match self {
+            Expr::Pair(a, _) => Ok(&*a),
+            _ => Err("can't car an atom")
+        }
+    }
+
+    fn cdr(&self) -> Result<&Expr, &'static str> {
+        match self {
+            Expr::Pair(_, b) => Ok(&*b),
+            _ => Err("can't car an atom")
+        }
+    }
+
+    fn cadr(&self) -> Result<&Expr, &'static str> {
+        self.cdr().unwrap().car()
+    }
+
+    fn caddr(&self) -> Result<&Expr, &'static str> {
+        self.cdr().unwrap().cdr().unwrap().car()
+    }
+
+}
+
+// 
+// Env
+// 
+// 
+
+struct Env<'a> {
+    symbols: HashMap<String, Value<'a>>,
+    _parent: Option<Box<Env<'a>>>,
+}
+
+impl<'a> Default for Env<'a> {
+    fn default() -> Self {
+        Self {
+            symbols: HashMap::new(),
+            _parent: None,
+        }
+    }
+}
+
+impl<'a> Env<'a> {
     fn new() -> Self {
         Default::default()
     }
-
-    fn create_machine(&mut self, name: &str){
-        let machine = Machine {
-            name: name.to_string(),
-            global_env: Env::new(),
-        };
-
-        self.machines.insert(name.to_string(), machine);
+    
+    fn _bind(&mut self, key: String, value: Value<'a>) {
+        self.symbols.insert(key, value);
     }
-
-    fn get_mut_machine(&mut self, name: &str) -> Option<&mut Machine> {
-        self.machines.get_mut(&name.to_string())
-    }
-
-    fn compute(&mut self, name: &str, program: Program) {
-        self.get_mut_machine(name).expect("can't find machine").compute(program);
+    
+    fn lookup(&self, key: &str) -> Option<&Value> {
+        self.symbols.get(key)
     }
 }
 
@@ -51,138 +149,143 @@ type User = String;
 // Machine
 // 
 // 
-struct Machine {
-    name: String,
-    global_env: Env,
+struct Machine<'a> {
+    _name: String,
+    global_env: Env<'a>,
 }
 
-impl Machine {
-    fn compute(&mut self, program: Program) {
+impl<'a> Machine<'a> {
+    fn compute(&mut self, code: &str) {
+
+        let program = self.read(code).expect("read error");
+
         for exp in program {
-            self.eval(exp, &self.global_env);
+            println!("{}", self.eval(&exp, &self.global_env).expect("cannot compute"));
         }
     }
+    
+    fn read(&self, _code: &str) -> Result<Vec<Expr>, &str> {
 
-    fn eval(&self, exp: Exp, env: &Env) -> Option<Value> {
-        match exp {
-            Exp::Number(n) => Some(Value::Number(n)),
-            Exp::Symbol(s) => Some(env.lookup(s).expect("not found").clone()),
-            // Exp::Pair(pair) => 
-            //     match pair.car {
-            //         Exp::KeywordBegin => Err("don't know how to begin"),
-            //         Exp::KeywordIf => Err("don't know how to if"),
-            //         Exp::KeywordLambda => Err("don't know how to Lambda"),
-            //         Exp::KeywordQuote => Err("don't know how to quote"),
-            //         Exp::KeywordSet => Err("don't know how to set!"),
-            //         _ => Err("don't know how to function application"),
-            //     }
-            _ => None,
+        let if_expr = Expr::Atom(Value::Nil);
+        let if_expr = Expr::cons(Expr::Atom(Value::Number(Number::Exact(2, None))), if_expr);
+        let if_expr = Expr::cons(Expr::Atom(Value::Number(Number::Exact(1, None))), if_expr);
+        let if_expr = Expr::cons(Expr::Atom(Value::True), if_expr);
+        let if_expr = Expr::cons(Expr::Atom(Value::KeywordIf), if_expr);
+
+        let _begin_expr = Expr::Atom(Value::KeywordBegin);
+        let _lambda_expr = Expr::Atom(Value::KeywordLambda);
+        let _quote_expr = Expr::Atom(Value::KeywordQuote);
+        let _set_expr = Expr::Atom(Value::KeywordSet);
+        let _symbol_expr = Expr::Atom(Value::Symbol("x"));
+
+        let program = vec!(
+            Expr::Atom(Value::Nil),
+            Expr::Atom(Value::Char('a')),
+            Expr::Atom(Value::False),
+            Expr::Atom(Value::Nil),
+            Expr::Atom(Value::Number(Number::Exact(7, None))),
+            Expr::Atom(Value::Number(Number::Inexact(3.14))),
+            Expr::Atom(Value::String("hello")),
+            Expr::Atom(Value::True),
+            if_expr,
+            // begin_expr,
+            // lambda_expr,
+            // quote_expr,
+            // set_expr,
+            // define_expr
+            // symbol_expr,
+            // Expr::Atom(Value::Symbol("+")),
+
+        );
+
+        Ok(program)
+    }
+
+    fn eval(&self, expr: &'a Expr, env: &'a Env) -> Result<Value, &'static str> {
+        match expr {
+            Expr::Atom(atom) =>  {
+                match atom {
+                    Value::Char(_)   |
+                    Value::False     |  
+                    Value::Nil       |
+                    Value::Number(_) |
+                    Value::String(_) |
+                    Value::True => Ok(*atom),
+                    Value::Symbol(s) => match env.lookup(s) {
+                        Some(v) => Ok(*v),
+                        None => Err("symbol not found"),
+                    }
+                    _ => Err("can't handle this atom"),
+                }
+            },
+            Expr::Pair(a, b) => {
+                match **a {
+                    Expr::Atom(Value::KeywordIf) => {
+                        if self.eval(b.car().unwrap(), env).unwrap().is_true() {
+                            self.eval(b.cadr().unwrap(), env)
+                        } else {
+                            self.eval(b.caddr().unwrap(), env)
+                        }
+                    },
+                    _ => Err("don't know how to handle this pair")
+                }
+            },
+        }
     }
 }
+
+// 
+// Cloud
+// 
+// 
+struct Cloud<'a> {
+    machines: HashMap<String, Machine<'a>>,
+    _users: HashMap<i128, User>,
 }
 
-// 
-// Env
-// 
-// 
-
-struct Env {
-    map: Vec<(String, Value)>,
-    parent: Option<Box<Env>>,
-}
-
-impl Default for Env {
+impl<'a> Default for Cloud<'a> {
     fn default() -> Self {
         Self {
-            map: Vec::new(),
-            parent: None,
+            machines: HashMap::new(),
+            _users: HashMap::new(),
         }
     }
 }
 
-impl Env {
+impl<'a> Cloud<'a> {
     fn new() -> Self {
         Default::default()
     }
-
-    fn bind(&mut self, symbol: String, value: Value) {
-        self.map.push((symbol, value));
+    
+    fn create_machine(&mut self, name: &str){
+        let machine = Machine {
+            _name: name.to_string(),
+            global_env: Env::new(),
+        };
+        
+        self.machines.insert(name.to_string(), machine);
     }
-
-    fn lookup(&self, symbol: String) -> Option<&Value> {
-        self.map
-            .iter()
-            .find(|(k, _)| k.eq(&symbol))
-            .map(|(_, v)| v)
+    
+    fn get_mut_machine(&mut self, name: &str) -> Option<&mut Machine<'a>> {
+        self.machines.get_mut(&name.to_string())
     }
-}
-
-// 
-// Program and Exp
-// 
-// 
-
-type Program = Vec<Exp>;
-
-enum Exp {
-    KeywordBegin,
-    KeywordIf,
-    KeywordLambda,
-    KeywordQuote,
-    KeywordSet,
-    Number(Number),
-    Symbol(String),
-    Pair(Pair)
-}
-
-struct Pair{
-    car: Box<Exp>,
-    cdr: Box<Exp>,
-}
-
-impl Pair{
-    fn car(&self) -> &Exp {
-        &*self.car
-    }
-}
-
-// 
-// Value
-// 
-// 
-#[derive(Clone)]
-enum Number {
-    Exact(i128, Option<i128>),
-    Inexact(f64),
-}
-
-#[derive(Clone)]
-enum Value{
-    Bool(bool),
-    Char(char),
-    Nil,
-    Number(Number),
-    String(String),
-    //    Proc(Proc),
-}
-
-impl Value {
-    fn print(&self, value: Value) -> String {
-        String::from("print placeholder")
+    
+    fn compute(&mut self, name: &str, program: &str) {
+        self.get_mut_machine(name).expect("can't find machine").compute(program);
     }
 }
 
 fn main() {
     // big bang
     let mut cloud: Cloud = Cloud::new();
-
+    
     // first machines 
-    cloud.create_machine("core");
-    cloud.create_machine("shorbaji");
-
+    cloud.create_machine("/core");
+    cloud.create_machine("/users/shorbaji");
+    
     // first eval
-    let program = vec!(Exp::Number(Number::Exact(42, None)));
+    
+    let code = "1";
 
-    cloud.compute("core", program);
-
+    cloud.compute("/core", code);    
 }
