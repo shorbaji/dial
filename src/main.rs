@@ -188,9 +188,9 @@ impl<'a> Machine<'a> {
             Expr::Atom(Value::String("hello")),
             Expr::Atom(Value::True),
             if_expr,
+            quote_expr,
             // begin_expr,
             // lambda_expr,
-            // quote_expr,
             // set_expr,
             // define_expr
             // symbol_expr,
