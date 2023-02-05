@@ -22,8 +22,15 @@ impl std::fmt::Display for Number {
     }
 }
 
-#[derive(Copy, Clone)]
-enum Value<'a> {
+// 
+// Program and Exp
+// 
+// 
+
+type _Program<'a>= Vec<Expr<'a>>;
+
+#[derive(Clone)]
+enum Expr<'a> {
     Char(char),
     False,
     KeywordBegin,
@@ -36,44 +43,34 @@ enum Value<'a> {
     String(&'static str),
     Symbol(&'a str),
     True,
+    Pair(Box<Expr<'a>>, Box<Expr<'a>>)
     //    Proc(Proc),
 }
 
-impl<'a> std::fmt::Display for Value<'a> {
+impl<'a> std::fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Char(a) => write!(f, "{}", a),
-            Value::False => write!(f, "f"),
-            Value::Nil => write!(f, "nil"),
-            Value::Number(a) => write!(f, "{}", a),
-            Value::String(a) => write!(f, "{}", a),
-            Value::Symbol(a) => write!(f, "{}", a),
-            Value::True => write!(f, "f"),
+            Expr::Char(a) => write!(f, "{}", a),
+            Expr::False => write!(f, "f"),
+            Expr::Nil => write!(f, "nil"),
+            Expr::Number(a) => write!(f, "{}", a),
+            Expr::String(a) => write!(f, "{}", a),
+            Expr::Symbol(a) => write!(f, "{}", a),
+            Expr::True => write!(f, "t"),
+            Expr::Pair(a, b) => write!(f, "({} . {})", a, b),
             _ => write!(f, "to be displayed"),
         }
     }
 }
 
-impl<'a> Value<'a> {
-    fn is_true(self) -> bool {
+impl<'a> Expr<'a> {
+    fn is_true(&self) -> bool {
         match self {
-            Value::Nil | Value::False => false,
+            Expr::Nil | Expr::False => false,
             _ => true,
         }
     }
 
-}
-
-// 
-// Program and Exp
-// 
-// 
-
-type _Program<'a>= Vec<Expr<'a>>;
-
-enum Expr<'a> {
-    Atom(Value<'a>),
-    Pair(Box<Expr<'a>>, Box<Expr<'a>>)
 }
 
 impl<'a> Expr<'a> {
@@ -112,7 +109,7 @@ impl<'a> Expr<'a> {
 // 
 
 struct Env<'a> {
-    symbols: HashMap<String, Value<'a>>,
+    symbols: HashMap<String, Expr<'a>>,
     _parent: Option<Box<Env<'a>>>,
 }
 
@@ -130,11 +127,11 @@ impl<'a> Env<'a> {
         Default::default()
     }
     
-    fn _bind(&mut self, key: String, value: Value<'a>) {
+    fn _bind(&mut self, key: String, value: Expr<'a>) {
         self.symbols.insert(key, value);
     }
     
-    fn lookup(&self, key: &str) -> Option<&Value> {
+    fn lookup(&self, key: &str) -> Option<&Expr> {
         self.symbols.get(key)
     }
 }
@@ -166,27 +163,30 @@ impl<'a> Machine<'a> {
     
     fn read(&self, _code: &str) -> Result<Vec<Expr>, &str> {
 
-        let if_expr = Expr::Atom(Value::Nil);
-        let if_expr = Expr::cons(Expr::Atom(Value::Number(Number::Exact(2, None))), if_expr);
-        let if_expr = Expr::cons(Expr::Atom(Value::Number(Number::Exact(1, None))), if_expr);
-        let if_expr = Expr::cons(Expr::Atom(Value::True), if_expr);
-        let if_expr = Expr::cons(Expr::Atom(Value::KeywordIf), if_expr);
+        let if_expr = Expr::Nil;
+        let if_expr = Expr::cons(Expr::Number(Number::Exact(2, None)), if_expr);
+        let if_expr = Expr::cons(Expr::Number(Number::Exact(1, None)), if_expr);
+        let if_expr = Expr::cons(Expr::True, if_expr);
+        let if_expr = Expr::cons(Expr::KeywordIf, if_expr);
 
-        let _begin_expr = Expr::Atom(Value::KeywordBegin);
-        let _lambda_expr = Expr::Atom(Value::KeywordLambda);
-        let _quote_expr = Expr::Atom(Value::KeywordQuote);
-        let _set_expr = Expr::Atom(Value::KeywordSet);
-        let _symbol_expr = Expr::Atom(Value::Symbol("x"));
+        let quote_expr = Expr::Nil;
+        let quote_expr = Expr::cons(Expr::cons(Expr::True, Expr::False), quote_expr);
+        let quote_expr = Expr::cons(Expr::KeywordQuote, quote_expr);
+
+        let _begin_expr = Expr::KeywordBegin;
+        let _lambda_expr = Expr::KeywordLambda;
+        let _set_expr = Expr::KeywordSet;
+        let _symbol_expr = Expr::Symbol("x");
 
         let program = vec!(
-            Expr::Atom(Value::Nil),
-            Expr::Atom(Value::Char('a')),
-            Expr::Atom(Value::False),
-            Expr::Atom(Value::Nil),
-            Expr::Atom(Value::Number(Number::Exact(7, None))),
-            Expr::Atom(Value::Number(Number::Inexact(3.14))),
-            Expr::Atom(Value::String("hello")),
-            Expr::Atom(Value::True),
+            Expr::Nil,
+            Expr::Char('a'),
+            Expr::False,
+            Expr::Nil,
+            Expr::Number(Number::Exact(7, None)),
+            Expr::Number(Number::Inexact(3.14)),
+            Expr::String("hello"),
+            Expr::True,
             if_expr,
             quote_expr,
             // begin_expr,
@@ -194,42 +194,41 @@ impl<'a> Machine<'a> {
             // set_expr,
             // define_expr
             // symbol_expr,
-            // Expr::Atom(Value::Symbol("+")),
-
+            // Value::Symbol("+")),
         );
 
         Ok(program)
     }
 
-    fn eval(&self, expr: &'a Expr, env: &'a Env) -> Result<Value, &'static str> {
+    fn eval(&self, expr: &'a Expr, env: &'a Env) -> Result<&Expr, &'static str> {
         match expr {
-            Expr::Atom(atom) =>  {
-                match atom {
-                    Value::Char(_)   |
-                    Value::False     |  
-                    Value::Nil       |
-                    Value::Number(_) |
-                    Value::String(_) |
-                    Value::True => Ok(*atom),
-                    Value::Symbol(s) => match env.lookup(s) {
-                        Some(v) => Ok(*v),
-                        None => Err("symbol not found"),
-                    }
-                    _ => Err("can't handle this atom"),
-                }
+            Expr::Char(_)   |
+            Expr::False     |  
+            Expr::Nil       |
+            Expr::Number(_) |
+            Expr::String(_) |
+            Expr::True => Ok(&expr),
+            Expr::Symbol(s) => match env.lookup(s) {
+                Some(v) => Ok(v),
+                None => Err("symbol not found"),
             },
             Expr::Pair(a, b) => {
                 match **a {
-                    Expr::Atom(Value::KeywordIf) => {
+                    Expr::KeywordIf => {
                         if self.eval(b.car().unwrap(), env).unwrap().is_true() {
                             self.eval(b.cadr().unwrap(), env)
                         } else {
                             self.eval(b.caddr().unwrap(), env)
                         }
                     },
+                    Expr::KeywordQuote => {
+                        Ok(b.car().unwrap())
+                    },
+
                     _ => Err("don't know how to handle this pair")
                 }
             },
+            _ => Err("can't handle this"),
         }
     }
 }
