@@ -224,7 +224,6 @@ impl<'a> Machine<'a> {
                     Expr::KeywordQuote => {
                         Ok(b.car().unwrap())
                     },
-
                     _ => Err("don't know how to handle this pair")
                 }
             },
@@ -283,7 +282,6 @@ fn main() {
     cloud.create_machine("/users/shorbaji");
     
     // first eval
-    
     let code = "1";
 
     cloud.compute("/core", code);    
