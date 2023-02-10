@@ -1,9 +1,9 @@
-use std::fmt::{Display, Debug};
+use std::fmt::Display;
 
 // 
 // Object
 // 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 enum Object {
     Boolean(bool),
     ByteVector,
@@ -107,12 +107,6 @@ struct Procedure {
     func : fn (Vec<Object>) -> Result<Object, &'static str>,
 }
 
-impl Debug for Procedure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<proc>")
-    }
-}
-
 impl Procedure {
     fn apply<'a>(&'a self, args: Vec<Object>) -> Result<Object, &'static str>{
         (self.func)(args)
@@ -140,11 +134,6 @@ fn evlis<'a, 'b: 'a>(exprs: &'a [Object], env: &'a mut Env) -> Result<Vec<Object
     .into_iter()
     .map(|exp| eval(exp, env))
     .collect()
-}
-
-enum Wrapper<'a> {
-    Object(Object),
-    Ref(&'a Object),
 }
 
 fn eval<'a>(expr: &'a Object, env: &'a mut Env) -> Result<Object, &'static str> {
