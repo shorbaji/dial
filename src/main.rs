@@ -1,106 +1,68 @@
-use std::collections::HashMap;
+use std::fmt::{Display, Debug};
 
 // 
-// Value
+// Object
 // 
-// 
-#[derive(Copy, Clone)]
-enum Number {
-    Exact(i128, Option<i128>),
-    Inexact(f64),
-}
-
-impl std::fmt::Display for Number {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Number::Exact(n, d) => match d {
-                Some(d) => write!(f, "{}/{}", n, d),
-                None => write!(f, "{}", n),
-            },
-            Number::Inexact(n) => write!(f, "{}", n),
-        }
-    }
-}
-
-// 
-// Program and Exp
-// 
-// 
-
-type _Program<'a>= Vec<Expr<'a>>;
-
-#[derive(Clone)]
-enum Expr<'a> {
+#[derive(Clone, Debug)]
+enum Object {
+    Boolean(bool),
+    ByteVector,
     Char(char),
-    False,
-    KeywordBegin,
-    KeywordIf,
-    KeywordLambda,
-    KeywordQuote,
-    KeywordSet,
-    Nil,
+    Eof,
+    Keyword(&'static str),
+    Null,
     Number(Number),
-    String(&'static str),
-    Symbol(&'a str),
-    True,
-    Pair(Box<Expr<'a>>, Box<Expr<'a>>)
-    //    Proc(Proc),
+    Pair(Vec<Object>),
+    Port,
+    Procedure(Procedure),
+    String(String),
+    Symbol(String),
+    Unspecified,
+    Vector(Vec<Object>),
 }
 
-impl<'a> std::fmt::Display for Expr<'a> {
+impl Object {
+    fn new() -> Self {
+        Self::Unspecified
+    }
+    
+    fn list(mut v: Vec<Object>) -> Object {
+        Object::Pair(v)
+    }
+    
+    fn write(&self) -> Result<String, &'static str> {
+        match self {
+            Object::Boolean(b) => Ok(format!("{}", b)),
+            Object::Char(c) => Ok(format!("{}", c)),
+            Object::Eof => Ok(format!("eof")),
+            Object::Null => Ok(format!("null")),
+            Object::Number(n) => Ok(format!("{}", n)),
+            Object::Pair(v) => Ok(format!(
+                "({} . {})",
+                v[0].write()?,
+                v[1].write()?,
+            )),
+            Object::String(s) => Ok(format!("\"{}\"", s)),
+            Object::Symbol(s) => Ok(format!("{}", s)),
+            Object::Procedure(p) => Ok(format!("proc")),
+            Object::Unspecified => Ok(format!("<unspecified>")),
+            _ => Err("don't know how to represent this"),
+        }
+        
+    }
+    
+    fn car(&self) -> Result<&Object, &'static str> {
+        match self {
+            Object::Pair(v) => Ok(&v[0]),
+            _ => Err("not a pair"),
+        }
+    }
+}
+
+impl Display for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Expr::Char(a) => write!(f, "{}", a),
-            Expr::False => write!(f, "f"),
-            Expr::Nil => write!(f, "nil"),
-            Expr::Number(a) => write!(f, "{}", a),
-            Expr::String(a) => write!(f, "{}", a),
-            Expr::Symbol(a) => write!(f, "{}", a),
-            Expr::True => write!(f, "t"),
-            Expr::Pair(a, b) => write!(f, "({} . {})", a, b),
-            _ => write!(f, "to be displayed"),
-        }
+        write!(f, "{}", self.write().unwrap())
     }
-}
-
-impl<'a> Expr<'a> {
-    fn is_true(&self) -> bool {
-        match self {
-            Expr::Nil | Expr::False => false,
-            _ => true,
-        }
-    }
-
-}
-
-impl<'a> Expr<'a> {
-
-    fn cons(a: Expr<'a>, b: Expr<'a>) -> Self {
-        Expr::Pair(Box::new(a), Box::new(b))
-    }
-
-    fn car(&self) -> Result<&Expr, &'static str> {
-        match self {
-            Expr::Pair(a, _) => Ok(&*a),
-            _ => Err("can't car an atom")
-        }
-    }
-
-    fn cdr(&self) -> Result<&Expr, &'static str> {
-        match self {
-            Expr::Pair(_, b) => Ok(&*b),
-            _ => Err("can't car an atom")
-        }
-    }
-
-    fn cadr(&self) -> Result<&Expr, &'static str> {
-        self.cdr().unwrap().car()
-    }
-
-    fn caddr(&self) -> Result<&Expr, &'static str> {
-        self.cdr().unwrap().cdr().unwrap().car()
-    }
-
 }
 
 // 
@@ -108,181 +70,149 @@ impl<'a> Expr<'a> {
 // 
 // 
 
-struct Env<'a> {
-    symbols: HashMap<String, Expr<'a>>,
-    _parent: Option<Box<Env<'a>>>,
+struct Env {
+    parent: Option<Box<Env>>,
+    hashmap: std::collections::HashMap<String, Object>,
 }
 
-impl<'a> Default for Env<'a> {
-    fn default() -> Self {
-        Self {
-            symbols: HashMap::new(),
-            _parent: None,
-        }
-    }
-}
-
-impl<'a> Env<'a> {
+impl Env {
     fn new() -> Self {
-        Default::default()
-    }
-    
-    fn _bind(&mut self, key: String, value: Expr<'a>) {
-        self.symbols.insert(key, value);
-    }
-    
-    fn lookup(&self, key: &str) -> Option<&Expr> {
-        self.symbols.get(key)
-    }
-}
-
-// 
-// User
-// 
-// 
-type User = String;
-
-// 
-// Machine
-// 
-// 
-struct Machine<'a> {
-    _name: String,
-    global_env: Env<'a>,
-}
-
-impl<'a> Machine<'a> {
-    fn compute(&mut self, code: &str) {
-
-        let program = self.read(code).expect("read error");
-
-        for exp in program {
-            println!("{}", self.eval(&exp, &self.global_env).expect("cannot compute"));
+        Self {
+            parent: None,
+            hashmap: std::collections::HashMap::new(),    
         }
     }
     
-    fn read(&self, _code: &str) -> Result<Vec<Expr>, &str> {
-
-        let if_expr = Expr::Nil;
-        let if_expr = Expr::cons(Expr::Number(Number::Exact(2, None)), if_expr);
-        let if_expr = Expr::cons(Expr::Number(Number::Exact(1, None)), if_expr);
-        let if_expr = Expr::cons(Expr::True, if_expr);
-        let if_expr = Expr::cons(Expr::KeywordIf, if_expr);
-
-        let quote_expr = Expr::Nil;
-        let quote_expr = Expr::cons(Expr::cons(Expr::True, Expr::False), quote_expr);
-        let quote_expr = Expr::cons(Expr::KeywordQuote, quote_expr);
-
-        let _begin_expr = Expr::KeywordBegin;
-        let _lambda_expr = Expr::KeywordLambda;
-        let _set_expr = Expr::KeywordSet;
-        let _symbol_expr = Expr::Symbol("x");
-
-        let program = vec!(
-            Expr::Nil,
-            Expr::Char('a'),
-            Expr::False,
-            Expr::Nil,
-            Expr::Number(Number::Exact(7, None)),
-            Expr::Number(Number::Inexact(3.14)),
-            Expr::String("hello"),
-            Expr::True,
-            if_expr,
-            quote_expr,
-            // begin_expr,
-            // lambda_expr,
-            // set_expr,
-            // define_expr
-            // symbol_expr,
-            // Value::Symbol("+")),
-        );
-
-        Ok(program)
+    fn insert(&mut self, location:&str, object: Object) -> Option<Object> {
+        self.hashmap.insert(location.to_string(), object)
     }
+    
+    fn lookup(&self, location: &str) -> Option<&Object> {
+        self.hashmap.get(location) 
+    }
+}
+// 
+// Miscellaneous
+// 
+// 
+type Number = i128;
 
-    fn eval(&self, expr: &'a Expr, env: &'a Env) -> Result<&Expr, &'static str> {
-        match expr {
-            Expr::Char(_)   |
-            Expr::False     |  
-            Expr::Nil       |
-            Expr::Number(_) |
-            Expr::String(_) |
-            Expr::True => Ok(&expr),
-            Expr::Symbol(s) => match env.lookup(s) {
-                Some(v) => Ok(v),
-                None => Err("symbol not found"),
+// 
+// Procedure
+// 
+// 
+
+#[derive(Clone)]
+struct Procedure {
+    func : fn (Vec<Object>) -> Result<Object, &'static str>,
+}
+
+impl Debug for Procedure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<proc>")
+    }
+}
+
+impl Procedure {
+    fn apply<'a>(&'a self, args: Vec<Object>) -> Result<Object, &'static str>{
+        (self.func)(args)
+    }
+}
+
+fn add<'a>(v: Vec<Object>) -> Result<Object, &'static str> {
+    
+    let mut acc: Number = 0;
+    
+    for object in v {
+        match object {
+            Object::Number(n) => {
+                acc += n;
             },
-            Expr::Pair(a, b) => {
-                match **a {
-                    Expr::KeywordIf => {
-                        if self.eval(b.car().unwrap(), env).unwrap().is_true() {
-                            self.eval(b.cadr().unwrap(), env)
-                        } else {
-                            self.eval(b.caddr().unwrap(), env)
+            _ => {return Err("not a number");}
+        }
+    };
+    
+    Ok(Object::Number(acc))
+}
+
+fn evlis<'a, 'b: 'a>(exprs: &'a [Object], env: &'a mut Env) -> Result<Vec<Object>, &'static str> {
+    exprs
+    .into_iter()
+    .map(|exp| eval(exp, env))
+    .collect()
+}
+
+enum Wrapper<'a> {
+    Object(Object),
+    Ref(&'a Object),
+}
+
+fn eval<'a>(expr: &'a Object, env: &'a mut Env) -> Result<Object, &'static str> {
+    match expr {
+        Object::Symbol(s) => match env.lookup(s) {
+            Some(object) => Ok(object.clone()),
+            None => Err("symbol not found"),
+        },
+        Object::Boolean(_) |
+        Object::ByteVector |
+        Object::Char(_) |
+        Object::Null |
+        Object::Number(_) |
+        Object::String(_) |
+        Object::Vector (_)=> Ok(expr.clone()),
+        Object::Pair(v) => match v[0] {
+            Object::Keyword("if") => Ok(expr.clone()),
+            Object::Keyword("quote") => Ok(v[1].clone()),
+            _ => {
+                let operator = &v[0];
+                let operands = &v[1..];
+                
+                match eval(&v[0], env)? {
+                    Object::Procedure(procedure) => {
+                        Ok(procedure.apply(
+                            evlis(&v[1..],env)?)?)},
+                            _ =>  Err("not a proc"),
                         }
                     },
-                    Expr::KeywordQuote => {
-                        Ok(b.car().unwrap())
-                    },
-                    _ => Err("don't know how to handle this pair")
-                }
             },
-            _ => Err("can't handle this"),
-        }
+        _ => return Err("can't eval this"),  
     }
 }
-
-// 
-// Cloud
-// 
-// 
-struct Cloud<'a> {
-    machines: HashMap<String, Machine<'a>>,
-    _users: HashMap<i128, User>,
-}
-
-impl<'a> Default for Cloud<'a> {
-    fn default() -> Self {
-        Self {
-            machines: HashMap::new(),
-            _users: HashMap::new(),
-        }
-    }
-}
-
-impl<'a> Cloud<'a> {
-    fn new() -> Self {
-        Default::default()
-    }
-    
-    fn create_machine(&mut self, name: &str){
-        let machine = Machine {
-            _name: name.to_string(),
-            global_env: Env::new(),
-        };
         
-        self.machines.insert(name.to_string(), machine);
-    }
-    
-    fn get_mut_machine(&mut self, name: &str) -> Option<&mut Machine<'a>> {
-        self.machines.get_mut(&name.to_string())
-    }
-    
-    fn compute(&mut self, name: &str, program: &str) {
-        self.get_mut_machine(name).expect("can't find machine").compute(program);
-    }
-}
-
-fn main() {
-    // big bang
-    let mut cloud: Cloud = Cloud::new();
-    
-    // first machines 
-    cloud.create_machine("/core");
-    cloud.create_machine("/users/shorbaji");
-    
-    // first eval
-    let code = "1";
-
-    cloud.compute("/core", code);    
-}
+        
+        fn main() {
+            let mut env = Env::new();
+            env.insert("x", Object::Boolean(true));
+            env.insert("+", Object::Procedure(Procedure {func: add}));
+            
+            let exprs= vec!(
+                Object::Number(1),
+                Object::Null,
+                Object::String("hello, world!".to_string()),
+                Object::Symbol("x".to_string()),
+                Object::Symbol("+".to_string()),
+                Object::Pair(vec!(
+                    Object::Keyword("quote"),
+                    Object::Symbol("x".to_string()),    
+                )),
+                Object::Pair(vec!(
+                    Object::Keyword("quote"),
+                    Object::Pair(vec![
+                        Object::Symbol("x".to_string()),
+                        Object::Number(1),
+                        ]),    
+                    )),
+                    Object::Pair(vec!(
+                        Object::Symbol("+".to_string()),
+                        Object::Number(1),
+                        Object::Number(2),
+                    )),
+                );
+                
+                let mut object = Object::Null;
+                
+                for expr in exprs {
+                    println!("{}", eval(&expr, &mut env).unwrap());
+                }
+            }
+            
