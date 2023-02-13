@@ -160,6 +160,20 @@ impl Object {
         }
     }
 
+    fn eval_define(&self, envr: Rc<RefCell<Env>>) -> Result<Rc<Object>, &'static str> {
+        match self {
+            Object::Pair(car, cdr) => {
+                match &*car.clone() {
+                    Object::Symbol(s) => {
+                        envr.borrow_mut().insert(&s, cdr.car()?.eval(envr.clone())?);
+                        Ok(Rc::new(Object::Unspecified))
+                    },
+                    _ => Err("malformed define expression - need a symbol")
+                }
+            },
+            _ => Err("malformed define expression - no value"),
+        }
+    }
     fn eval(&self, envr: Rc<RefCell<Env>>) -> Result<Rc<Object>, &'static str> {
         match self {
             Object::Symbol(s) => match envr.borrow().lookup(&s) {
@@ -180,6 +194,7 @@ impl Object {
                     Object::Keyword("if") => cdr.ifify(envr),
                     Object::Keyword("quote") => Ok(cdr.clone()),
                     Object::Keyword("lambda") => cdr.eval_lambda(envr),
+                    Object::Keyword("define") => cdr.eval_define(envr),
                     _ => car.eval(envr.clone())?.apply(cdr.evlis(envr)?),
                 }
             }
@@ -332,6 +347,7 @@ fn parse_atom(s: &str) -> Result<Object, &'static str> {
         "lambda" => Ok(Object::Keyword("lambda")),
         "if" => Ok(Object::Keyword("if")),
         "quote" => Ok(Object::Keyword("quote")),
+        "define" => Ok(Object::Keyword("define")),
         _ => match s.parse::<i128>() {
             Ok(n) => Ok(Object::Number(n)),
             Err(_) => Ok(Object::Symbol(s.to_string())),
@@ -385,19 +401,22 @@ fn parse(open: bool, tokens: &[String]) -> Result<Object, &'static str> {
 fn main() {
     let mut envr = Env::new();
 
-    envr.insert("x", Rc::new(Object::Number(1)));
     envr.insert("+", Rc::new(Object::Procedure(Procedure::Builtin(add))));
 
     let envr = Rc::new(RefCell::new(envr));
 
     let codes = vec![
-        "x",
         "1",
         "(+ 1 2)",
         "((lambda (x) (+ x x)) 42)",
         "()",
         "(+ 1 2)",
         "(quote 1 2 3 4)",
+        "(define x 1)",
+        "x",
+        "(define double (lambda (x) (+ x x)))",
+        "(double 2)",
+        "(double (double 4))"
     ];
 
     for code in codes {
