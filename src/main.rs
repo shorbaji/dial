@@ -1,4 +1,4 @@
-use std::{fmt::Display, rc::{Rc, Weak}, path::Iter, collections::VecDeque, cell::{RefCell, Ref}};
+use std::{fmt::Display, rc::{Rc, Weak}, path::Iter, collections::{HashMap, VecDeque}, cell::{RefCell, Ref}, hash::Hash};
 
 // 
 // Object
@@ -67,6 +67,13 @@ impl Object {
         match self {
             Object::Pair(a, _) => Ok(a),
             _ => Err("not a pair"),
+        }
+    }
+
+    fn symbol_to_str(&self) -> Result<String, &'static str> {
+        match self {
+            Object::Symbol(s) => Ok(s.clone()),
+            _ => Err("not a symbol")
         }
     }
 
@@ -160,7 +167,10 @@ impl Object {
 
     fn eval(&self, mut envr: Rc<RefCell<Env>>) -> Result<Rc<Object>, &'static str> {
         match self {
-            Object::Symbol(s) => lookup_symbol(s.clone(), envr),
+            Object::Symbol(s) => match envr.borrow().lookup(&s) {
+                Some(object) => Ok(object.clone()),
+                None => Err("symbol not found"),
+            },
             Object::Boolean(_) |
             Object::ByteVector |
             Object::Char(_) |
@@ -204,7 +214,7 @@ impl Iterator for Object {
 // 
 
 struct Env {
-    parent: Option<Rc<Env>>,
+    parent: Option<Rc<RefCell<Env>>>,
     hashmap: std::collections::HashMap<String, Rc<Object>>,
 }
 
@@ -242,10 +252,35 @@ enum Procedure {
 }
 
 impl Procedure {
-    fn call(&self, operands: VecDeque<Rc<Object>>) -> Result<Rc<Object>, &'static str> {
+    fn call(&self, args: VecDeque<Rc<Object>>) -> Result<Rc<Object>, &'static str> {
         match self {
-            Procedure::Builtin(func) => func(operands),
-            Procedure::Lambda(_, _, _) => Err("don't yet know how to call a lambda")
+            Procedure::Builtin(func) => func(args),
+            Procedure::Lambda(vars, body, envr) => {
+                let child_envr = Env {
+                    parent: envr.upgrade(),
+                    hashmap: HashMap::new(),
+                };
+
+                let mut child_envr = Rc::new(RefCell::new(child_envr));
+
+                let vars = vars.to_vec()?;
+
+                if vars.len() == args.len() {
+                    let mut last:Rc<Object> = Rc::new(Object::Unspecified);
+
+                    for (var, arg) in vars.iter().zip(args.iter()) {
+                        child_envr.borrow_mut().insert(&var.symbol_to_str()?, arg.clone());
+                    };
+
+                    for expr in body.to_vec()? {
+                        last = expr.eval(child_envr.clone())?
+                    };
+
+                    Ok(last)
+                } else {
+                    Err("wrong number of args")
+                }
+            }
         }
     }
 }
@@ -265,19 +300,6 @@ fn add<'a>(objects: VecDeque<Rc<Object>>) -> Result<Rc<Object>, &'static str> {
     Ok(Rc::new(Object::Number(acc)))
 }
 
-fn lookup_symbol(s: String, mut envr: Rc<RefCell<Env>>) -> Result<Rc<Object>, &'static str> {
-    match envr.borrow().lookup(&s) {
-        Some(object) => {
-            Ok(object.clone())
-        },
-        None => Err("symbol not found"),
-    }
-}
-
-
-// fn eval_pair(car: Rc<Object>, cdr: Rc<Object>, mut envr: Rc<RefCell<Env>>) -> Result<Rc<Object>, &'static str> {
-// }
-
 fn main() {
     let mut envr = Rc::new(RefCell::new(Env::new()));
 
@@ -296,8 +318,9 @@ fn main() {
     let v = vec!(Object::Keyword("if"), Object::Boolean(false), Object::Number(1), Object::Number(2));
     let if_expr = Object::from_vec(&v[..]);
 
-    let v = vec!(Object::Keyword("lambda"), Object::Boolean(false), Object::Number(1), Object::Number(2));
+    let v = vec!(Object::Keyword("lambda"), Object::Null, Object::Number(1), Object::Number(2), Object::String("hello, Afra".to_string()));
     let lambda_expr = Object::from_vec(&v[..]);
+
 
     let exprs= vec!(
         Rc::new(Object::Number(1)),
@@ -309,7 +332,7 @@ fn main() {
         quote_expr_pair,
         func_call_expr,
         if_expr,
-        lambda_expr);
+        Object::cons(lambda_expr, Rc::new(Object::Null)));
     
 
     for expr in exprs {
