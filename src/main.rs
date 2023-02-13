@@ -1,8 +1,13 @@
-use std::{fmt::Display, rc::{Rc, Weak}, collections::{HashMap, VecDeque}, cell::RefCell};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, VecDeque},
+    fmt::Display,
+    rc::{Rc, Weak},
+};
 
-// 
+//
 // Object
-// 
+//
 #[derive(Clone)]
 enum Object {
     Boolean(bool),
@@ -25,18 +30,18 @@ impl Object {
     fn cons(car: Rc<Object>, cdr: Rc<Object>) -> Rc<Self> {
         Rc::new(Self::Pair(car, cdr))
     }
-    
+
     fn from_vec(v: &[Object]) -> Rc<Self> {
         if v.is_empty() {
             Rc::new(Self::Null)
         } else {
             let car = v[0].clone();
             let cdr = &v[1..];
-        
-            Self::cons(Rc::new(car), Self::from_vec(cdr))    
+
+            Self::cons(Rc::new(car), Self::from_vec(cdr))
         }
     }
-    
+
     fn write(&self) -> Result<String, &'static str> {
         match self {
             Object::Boolean(b) => Ok(format!("{}", b)),
@@ -44,11 +49,7 @@ impl Object {
             Object::Eof => Ok(format!("eof")),
             Object::Null => Ok(format!("null")),
             Object::Number(n) => Ok(format!("{}", n)),
-            Object::Pair(a, b) => Ok(format!(
-                "({} . {})",
-                a.write()?,
-                b.write()?,
-            )),
+            Object::Pair(a, b) => Ok(format!("({} . {})", a.write()?, b.write()?,)),
             Object::String(s) => Ok(format!("\"{}\"", s)),
             Object::Symbol(s) => Ok(format!("{}", s)),
             Object::Procedure(_) => Ok(format!("proc")),
@@ -57,7 +58,7 @@ impl Object {
             _ => Err("don't know how to represent this"),
         }
     }
-    
+
     fn car(&self) -> Result<&Object, &'static str> {
         match self {
             Object::Pair(a, _) => Ok(a),
@@ -68,17 +69,17 @@ impl Object {
     fn symbol_to_str(&self) -> Result<String, &'static str> {
         match self {
             Object::Symbol(s) => Ok(s.clone()),
-            _ => Err("not a symbol")
+            _ => Err("not a symbol"),
         }
     }
 
-    fn apply(&self, operands: Rc<Object>) -> Result<Rc<Object>, &'static str>{
+    fn apply(&self, operands: Rc<Object>) -> Result<Rc<Object>, &'static str> {
         let operands = operands.to_vec()?;
 
         match self {
             Object::Procedure(proc) => proc.call(operands),
             _ => Err("not a proc"),
-        }        
+        }
     }
 
     fn to_vec(&self) -> Result<VecDeque<Rc<Object>>, &'static str> {
@@ -89,21 +90,20 @@ impl Object {
                 v.push_front(car.clone());
                 v.append(&mut rest);
                 Ok(v)
-            },
-            Object::Null => {
-                Ok(VecDeque::new())
-            },
-            _ => Err("malformed evlis")
+            }
+            Object::Null => Ok(VecDeque::new()),
+            _ => Err("malformed evlis"),
         }
     }
 
     fn evlis(&self, envr: Rc<RefCell<Env>>) -> Result<Rc<Object>, &'static str> {
         match self {
-            Object::Pair(car, cdr) => { 
-                Ok(Object::cons(car.clone().eval(envr.clone())?, cdr.evlis(envr)?))
-            },
-            _ => Ok(Rc::new(Object::Null))
-        } 
+            Object::Pair(car, cdr) => Ok(Object::cons(
+                car.clone().eval(envr.clone())?,
+                cdr.evlis(envr)?,
+            )),
+            _ => Ok(Rc::new(Object::Null)),
+        }
     }
 
     fn is_true(&self) -> bool {
@@ -114,7 +114,6 @@ impl Object {
         }
     }
 
-
     fn eval_antecedent(&self, envr: Rc<RefCell<Env>>) -> Result<Rc<Object>, &'static str> {
         match self {
             Object::Pair(antecedent, _cdr) => antecedent.clone().eval(envr),
@@ -122,8 +121,7 @@ impl Object {
         }
     }
 
-    fn eval_if(&self, flag: bool, envr: Rc<RefCell<Env>>) -> Result<Rc<Object>, &'static str>{
-        
+    fn eval_if(&self, flag: bool, envr: Rc<RefCell<Env>>) -> Result<Rc<Object>, &'static str> {
         match self {
             Object::Pair(consequent, cdr) => {
                 if flag {
@@ -131,7 +129,7 @@ impl Object {
                 } else {
                     cdr.eval_antecedent(envr)
                 }
-            },
+            }
             _ => Err("malformed consequent in if statement"),
         }
     }
@@ -142,21 +140,23 @@ impl Object {
                 let predicate = car.clone();
 
                 cdr.eval_if(predicate.eval(envr.clone())?.is_true(), envr)
-            },
-            _ => Err("malformed if statement")
+            }
+            _ => Err("malformed if statement"),
         }
     }
 
     fn self_eval(&self) -> Rc<Object> {
         Rc::new(self.clone())
-    } 
+    }
 
     fn eval_lambda(&self, envr: Rc<RefCell<Env>>) -> Result<Rc<Object>, &'static str> {
         match self {
-            Object::Pair(car, cdr) => {
-                Ok(Rc::new(Object::Procedure(Procedure::Lambda(car.clone(), cdr.clone(), Rc::downgrade(&envr)))))
-            },
-            _ => Err("malformed lambda expression")
+            Object::Pair(car, cdr) => Ok(Rc::new(Object::Procedure(Procedure::Lambda(
+                car.clone(),
+                cdr.clone(),
+                Rc::downgrade(&envr),
+            )))),
+            _ => Err("malformed lambda expression"),
         }
     }
 
@@ -166,28 +166,26 @@ impl Object {
                 Some(object) => Ok(object.clone()),
                 None => Err("symbol not found"),
             },
-            Object::Boolean(_) |
-            Object::ByteVector |
-            Object::Char(_) |
-            Object::Null |
-            Object::Number(_) |
-            Object::String(_) |
-            Object::Vector (_) => Ok(self.self_eval()),
+            Object::Boolean(_)
+            | Object::ByteVector
+            | Object::Char(_)
+            | Object::Null
+            | Object::Number(_)
+            | Object::String(_)
+            | Object::Vector(_) => Ok(self.self_eval()),
             Object::Pair(car, cdr) => {
                 let car = car.clone();
-    
+
                 match *car {
                     Object::Keyword("if") => cdr.ifify(envr),
                     Object::Keyword("quote") => Ok(cdr.clone()),
                     Object::Keyword("lambda") => cdr.eval_lambda(envr),
                     _ => car.eval(envr.clone())?.apply(cdr.evlis(envr)?),
-                }    
+                }
             }
-            _ => return Err("can't eval this"),  
+            _ => return Err("can't eval this"),
         }
     }
-          
-    
 }
 
 impl Display for Object {
@@ -195,10 +193,10 @@ impl Display for Object {
         write!(f, "{}", self.write().unwrap())
     }
 }
-// 
+//
 // Env
-// 
-// 
+//
+//
 
 struct Env {
     parent: Option<Rc<RefCell<Env>>>,
@@ -209,33 +207,34 @@ impl Env {
     fn new() -> Self {
         Self {
             parent: None,
-            hashmap: std::collections::HashMap::new(),    
+            hashmap: std::collections::HashMap::new(),
         }
     }
-    
-    fn insert(&mut self, location:&str, object: Rc<Object>) -> Option<Rc<Object>> {
+
+    fn insert(&mut self, location: &str, object: Rc<Object>) -> Option<Rc<Object>> {
         self.hashmap.insert(location.to_string(), object)
     }
-    
+
     fn lookup(&self, symbol: &str) -> Option<Rc<Object>> {
         match self.hashmap.get(symbol) {
             Some(r) => Some(r.clone()),
-            None => self.parent
-                    .as_deref()
-                    .and_then(|r| r.borrow().lookup(symbol))
+            None => self
+                .parent
+                .as_deref()
+                .and_then(|r| r.borrow().lookup(symbol)),
         }
     }
 }
-// 
+//
 // Miscellaneous
-// 
-// 
+//
+//
 type Number = i128;
 
-// 
+//
 // Procedure
-// 
-// 
+//
+//
 
 #[derive(Clone)]
 enum Procedure {
@@ -258,15 +257,17 @@ impl Procedure {
                 let vars = vars.to_vec()?;
 
                 if vars.len() == args.len() {
-                    let mut last:Rc<Object> = Rc::new(Object::Unspecified);
+                    let mut last: Rc<Object> = Rc::new(Object::Unspecified);
 
                     for (var, arg) in vars.iter().zip(args.iter()) {
-                        child_envr.borrow_mut().insert(&var.symbol_to_str()?, arg.clone());
-                    };
+                        child_envr
+                            .borrow_mut()
+                            .insert(&var.symbol_to_str()?, arg.clone());
+                    }
 
                     for expr in body.to_vec()? {
                         last = expr.eval(child_envr.clone())?
-                    };
+                    }
 
                     Ok(last)
                 } else {
@@ -284,11 +285,13 @@ fn add<'a>(objects: VecDeque<Rc<Object>>) -> Result<Rc<Object>, &'static str> {
         match **object {
             Object::Number(n) => {
                 acc += n;
-            },
-            _ => {return Err("not a number");}
+            }
+            _ => {
+                return Err("not a number");
+            }
         }
-    };
-    
+    }
+
     Ok(Rc::new(Object::Number(acc)))
 }
 
@@ -298,27 +301,25 @@ fn read(code: &str) -> Result<Rc<Object>, &'static str> {
 }
 
 fn tokenize(code: String) -> Vec<String> {
-    code
-      .replace("(", " ( ")
-      .replace(")", " ) ")
-      .split_whitespace()
-      .map(|x| x.to_string())
-      .collect()
+    code.replace("(", " ( ")
+        .replace(")", " ) ")
+        .split_whitespace()
+        .map(|x| x.to_string())
+        .collect()
 }
 
 fn grab(tokens: &[String]) -> &[String] {
     let start = 0;
     let mut end = 0;
 
-
     if tokens[start] == "(" {
         let mut count = 1;
         end += 1;
         while count > 0 {
             if tokens[end] == "(" {
-                count +=1;
+                count += 1;
             } else if tokens[end] == ")" {
-                count -=1;
+                count -= 1;
             }
             end += 1;
         }
@@ -331,12 +332,10 @@ fn parse_atom(s: &str) -> Result<Object, &'static str> {
         "lambda" => Ok(Object::Keyword("lambda")),
         "if" => Ok(Object::Keyword("if")),
         "quote" => Ok(Object::Keyword("quote")),
-        _ => {
-            match s.parse::<i128>() {
-                Ok(n) => Ok(Object::Number(n)),
-                Err(_) => Ok(Object::Symbol(s.to_string())),
-            }    
-        }
+        _ => match s.parse::<i128>() {
+            Ok(n) => Ok(Object::Number(n)),
+            Err(_) => Ok(Object::Symbol(s.to_string())),
+        },
     }
 }
 
@@ -347,11 +346,10 @@ fn parse(open: bool, tokens: &[String]) -> Result<Object, &'static str> {
                 Err("unclosed parenthesis")
             } else {
                 // let g = grab(tokens)?;
-                Ok(
-                    Object::Pair(
-                        Rc::new(parse(false, tokens)?),
-                        Rc::new(parse(true, &tokens[grab(tokens).len()..])?)))
-
+                Ok(Object::Pair(
+                    Rc::new(parse(false, tokens)?),
+                    Rc::new(parse(true, &tokens[grab(tokens).len()..])?),
+                ))
             }
         } else if tokens[0] == ")" {
             Ok(Object::Null)
@@ -360,8 +358,11 @@ fn parse(open: bool, tokens: &[String]) -> Result<Object, &'static str> {
                 Err("unclosed parenthesis")
             } else {
                 let car = parse_atom(&tokens[0])?;
-    
-                Ok(Object::Pair(Rc::new(car), Rc::new(parse(open, &tokens[1..])?)))
+
+                Ok(Object::Pair(
+                    Rc::new(car),
+                    Rc::new(parse(open, &tokens[1..])?),
+                ))
             }
         }
     } else {
@@ -378,22 +379,27 @@ fn parse(open: bool, tokens: &[String]) -> Result<Object, &'static str> {
                 Ok(n) => Ok(Object::Number(n)),
                 Err(_) => Ok(Object::Symbol(tokens[0].clone())),
             }
-
-            
         }
     }
 }
 fn main() {
-    let codes = vec!(
+    let mut envr = Env::new();
+
+    envr.insert("x", Rc::new(Object::Number(1)));
+    envr.insert("+", Rc::new(Object::Procedure(Procedure::Builtin(add))));
+
+    let envr = Rc::new(RefCell::new(envr));
+
+    let codes = vec![
         "x",
         "1",
         "(+ 1 2)",
         "((lambda (x) (+ x x)) 42)",
         "()",
         "(+ 1 2)",
-        "(quote 1 2 3 4)"
-    );
-    
+        "(quote 1 2 3 4)",
+    ];
+
     for code in codes {
         let expr = read(code).unwrap();
         print!("{} => ", code);
