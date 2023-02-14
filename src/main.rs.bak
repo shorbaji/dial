@@ -1,0 +1,448 @@
+use std::iter::Iterator;
+use std::collections::HashMap;
+use std::fmt::Display;
+
+// TODO
+//
+// - Clean-up - understand lifetimes and what they mean
+// - proc
+// - Implement built-in procedure +
+// - Implement function calls
+// - Implement define expr
+// - Implement symbol lookup
+// - Implement lambda expressions and defined procedures
+// - Clean-up - Modules
+// - Clean-up - Tests
+// - Clean-up - Documentation
+// - Commit eval
+// - Implement basic read
+//
+
+// 
+// Number
+// 
+// 
+#[derive(Clone, Copy)]
+enum Number {
+    Exact(i128, Option<i128>),
+    Inexact(f64),
+    NaN,
+}
+
+impl std::fmt::Display for Number {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Number::Exact(n, d) => match d {
+                Some(d) => write!(f, "{}/{}", n, d),
+                None => write!(f, "{}", n),
+            },
+            Number::Inexact(n) => write!(f, "{}", n),
+            Number::NaN => write!(f, "NaN"),
+        }
+    }
+}
+
+impl Number {
+    fn add(self, other: Number) -> Self {
+        match (self, other) {
+            (Number::Exact(n, d), Number::Exact(on, od)) => Number::add_exact_exact(n, d, on, od),
+            (Number::Exact(n, d), Number::Inexact(i)) => Number::add_exact_inexact(n, d, i),
+            (Number::Inexact(i), Number::Exact(n, d)) => Number::add_exact_inexact(n, d, i),
+            (Number::Inexact(i), Number::Inexact(j)) => Number::Inexact(i+j),
+            _ => Number::NaN,
+        }
+    }
+
+    fn add_exact_exact(n: i128, d: Option<i128>, on: i128, od: Option<i128>) -> Self {
+        match (d, od) {
+            (None, None) => Number::Exact(n + on, None),
+            (None, Some(od)) => Number::Exact(n* od + on, Some(od)),
+            (Some(d), None) => Number::Exact(n + on*d, Some(d)),
+            (Some(d), Some(od)) => Number::Exact(n*od + on*d, Some(od*d)),
+        }
+    }
+
+    fn add_exact_inexact(n: i128, d: Option<i128>, i: f64) -> Self {
+        match d {
+            Some(d) => Number::Inexact(i + n as f64 / d as f64),
+            None => Number::Inexact(i + n as f64),
+        }
+    }
+
+}
+// 
+// Proc
+// 
+// 
+
+// struct Proc {
+//     func: fn(Vec<& Expr>) -> Result<Expr, &'static str>,
+// }
+
+// fn plus< >(args: Vec<& Expr>) -> Result<Expr, &'static str> {
+//     let mut acc = Number::Exact(0, None);
+
+//     for arg in args {
+//         acc = match arg {
+//             Expr::Number(number) => acc.add(*number),
+//             _ => Number::NaN
+//         }
+//     }
+
+//     Ok(Expr::Number(acc))
+// }
+
+// 
+// Expr
+// 
+// 
+
+enum Value {
+    Char(char),
+    False,
+    Nil,
+    Number(Number),
+    String(String),
+    Symbol(String),
+    True,
+    // Proc(Proc),
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Char(a) => write!(f, "{}", a),
+            Value::False => write!(f, "f"),
+            Value::Nil => write!(f, "nil"),
+            Value::Number(a) => write!(f, "{}", a),
+            Value::String(a) => write!(f, "{}", a),
+            Value::Symbol(a) => write!(f, "{}", a),
+            Value::True => write!(f, "t"),
+            // Value::Proc(p) => write!(f, "<proc>"),
+        }
+    }
+}
+
+impl Value {
+    fn is_true(&self) -> bool {
+        match self {
+            Value::Nil | Value::False => false,
+            _ => true,
+        }
+    }
+}
+
+enum Expr {
+    Identifier(Identifier),
+    // Literal(Literal),
+    // ProcedureCall(ProcedureCall),
+    // Lambda(Lambda),
+    // Conditional(Conditional),
+    // Assignment(Assignment),
+    // Derived(Derived).
+    // MacroUse(MacroUse),
+    // MacroBlock(MacroBlock),
+    // Includer(Includer),
+}
+
+
+impl Display for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::KeywordIf => write!(f, "if"),
+            Expr::KeywordBegin => write!(f, "begin"),
+            Expr::KeywordLambda => write!(f, "lambda"),
+            Expr::KeywordQuote => write!(f, "quote"),
+            Expr::KeywordSet => write!(f, "set!"),
+            Expr::Atom(atom) => write!(f, "{}", *atom),
+            Expr::Pair(car, cons) => write!(f, "({} . {})", *car, *cons),
+            // Expr::Proc(p) => write!(f, "<proc>"),
+        }
+    }
+}
+
+struct ExprIter<'a> {
+    current: &'a Expr,
+}
+
+impl<'a> Iterator for ExprIter<'a>{
+    type Item = &'a Expr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current {
+            Expr::Pair(a, b) => {
+                self.current = &**b;
+                Some(&**a)
+            },
+            _ => None
+        }
+    }
+}
+
+impl Expr {
+    fn iter(&self) -> ExprIter {
+        ExprIter {
+            current: self,
+        }
+    }
+}
+
+impl Expr {
+
+    fn cons(a: Expr, b:Expr) -> Self {
+        Expr::Pair(Box::new(a), Box::new(b))
+    }
+
+    fn list (v: Vec<Expr>) -> Self {
+        v.into_iter().rev().fold(
+            Expr::Atom(Box::new(Value::Nil)),
+            |cdr, car| Expr::cons(car, cdr)
+        )
+    }
+
+    fn split(self) -> Result<(Box<Expr>, Box<Expr>), &'static str> {
+        match self {
+            Expr::Pair(a, b) => Ok((a, b)),
+            _ => Err("not a pair"),
+        }
+    }
+
+    // fn car(self) -> Result<Box<Expr>, &'static str> {
+    //     match self {
+    //         Expr::Pair(a, _) => Ok(a),
+    //         _ => Err("can't car an atom")
+    //     }
+    // }
+
+    // fn cdr(self) -> Result<Box<Expr>, &'static str> {
+    //     match self {
+    //         Expr::Pair(_, b) => Ok(b),
+    //         _ => Err("can't car an atom")
+    //     }
+    // }
+
+    // fn cadr(self) -> Result<Box<Expr>, &'static str> {
+    //     self.cdr().unwrap().car()
+    // }
+
+    // fn caddr(self) -> Result<Box<Expr>, &'static str> {
+    //     self.cdr().unwrap().cdr().unwrap().car()
+    // }
+
+}
+
+// 
+// Env
+// 
+// 
+
+struct Env {
+    symbols: HashMap<String, Value>,
+    _parent: Option<Box<Env>>,
+}
+
+impl Default for Env {
+    fn default() -> Self {
+        Self {
+            symbols: HashMap::new(),
+            _parent: None,
+        }
+    }
+}
+
+impl Env {
+    fn new() -> Self {
+        Default::default()
+    }
+    
+    fn _bind(&mut self, key: String, value: Value) {
+        self.symbols.insert(key, value);
+    }
+    
+    fn lookup(&self, key: &str) -> Option<&Value> {
+        self.symbols.get(key)
+    }
+}
+
+// 
+// Machine
+// 
+// 
+struct Machine {
+    _name: String,
+    global_env: Env,
+}
+
+impl Machine {
+    fn compute(&mut self, code: &str) {
+        let program = self.read(code).expect("read error");
+
+        for exp in program {
+            println!("{}", self.eval(exp, &self.global_env).expect("cannot compute"));
+        }
+    }
+    
+    fn read(&self, _code: &str) -> Result<Vec<Expr>, &str> {
+
+        let if_expr = Expr::list(vec!(
+            Expr::KeywordIf,
+            Expr::Atom(Box::new(Value::True)),
+            Expr::Atom(Box::new(Value::Number(Number::Exact(1, None)))),
+            Expr::Atom(Box::new(Value::Number(Number::Exact(2, None)))),
+        ));
+
+        println!("{}", if_expr);
+        /*
+            Pair(Box::new(Expr::Keyword))
+         */
+        let quote_expr = Expr::list(vec!(
+            Expr::KeywordQuote,
+            Expr::Atom(Box::new(Value::Number(Number::Exact(42, None)))),
+        ));
+
+        let begin_expr = Expr::list(vec!(
+            Expr::KeywordBegin,
+            Expr::Atom(Box::new(Value::Nil)),
+            Expr::Atom(Box::new(Value::False)),
+            Expr::Atom(Box::new(Value::Number(Number::Exact(52, None)))),
+        ));
+
+        let _lambda_expr = Expr::KeywordLambda;
+        let _set_expr = Expr::KeywordSet;
+        let _symbol_expr = Expr::Atom(Box::new(Value::Symbol(String::from("x"))));
+        let _define_expr = Expr::Atom(Box::new(Value::Nil));
+        
+        let program = vec!(
+            Expr::Atom(Box::new(Value::Nil)),
+            Expr::Atom(Box::new(Value::Char('j'))),
+            Expr::Atom(Box::new(Value::False)),
+            Expr::Atom(Box::new(Value::Number(Number::Exact(7, None)))),
+            Expr::Atom(Box::new(Value::Number(Number::Inexact(3.14)))),
+            Expr::Atom(Box::new(Value::String(String::from("hello")))),
+            Expr::Atom(Box::new(Value::True)),
+            if_expr,
+            // quote_expr,
+            begin_expr,
+            // define_expr
+            // symbol_expr,
+            // lambda_expr,
+            // Value::Symbol("+")),
+            // set_expr,
+        );
+
+        Ok(program)
+    }
+
+    fn eval<'a> (&self, expr: Expr, env: &'a Env) -> Result<Box<Value>, &'static str> {
+        match expr {
+            Expr::Atom(atom) => {
+                match *atom {
+                    Value::Char(_)   |
+                    Value::False     |  
+                    Value::Nil       |
+                    Value::Number(_) |
+                    Value::String(_) |
+                    Value::True => Ok(atom),
+                    // Value::Symbol(s) => match env.lookup(&s) {
+                    //     Some(v) => Ok(Box::new(*v)),
+                    //     None => Err("symbol not found"),
+                    // },
+                    _ => Err("don't know how to handle this atom")
+                }
+            },
+            Expr::Pair(a, b) => {
+                match *a {
+                    Expr::KeywordIf => {
+                        let (car, cdr) = b.split().unwrap();
+
+                        if self.eval(*car, env).unwrap().is_true() {
+                            let (cadr, _) = cdr.split().unwrap();
+                            self.eval(*cadr, env)
+                        } else {
+                            let (_, cddr) = cdr.split().unwrap();
+                            let (caddr, _) = cddr.split().unwrap();
+                            self.eval(*caddr, env)
+                        }
+                    },
+                    // Expr::KeywordQuote => {
+                    //     Ok(b.car().unwrap())
+                    // },
+                    // Expr::KeywordBegin => {
+                    //     Ok(b.iter().fold(
+                    //         Box::new(Value::Nil), 
+                    //         |_, expr| self.eval(*expr, env).unwrap()))
+                    // }
+                    _ => Err("don't know how to handle this pair")
+                }
+            },
+            _ => Err("can't handle this"),
+        }
+    }
+}
+
+// 
+// User
+// 
+// 
+// type User = String;
+
+// 
+// Cloud
+// 
+// 
+// struct Cloud {
+//     machines: HashMap<String, Machine>,
+//     _users: HashMap<i128, User>,
+// }
+
+// impl Default for Cloud {
+//     fn default() -> Self {
+//         Self {
+//             machines: HashMap::new(),
+//             _users: HashMap::new(),
+//         }
+//     }
+// }
+
+// impl Cloud {
+//     fn new() -> Self {
+//         Default::default()
+//     }
+    
+//     fn create_machine(&mut self, name: &str){
+//         let machine = Machine {
+//             _name: name.to_string(),
+//             global_env: Env::new(),
+//         };
+        
+//         self.machines.insert(name.to_string(), machine);
+//     }
+    
+//     fn get_mut_machine(&mut self, name: &str) -> Option<&mut Machine> {
+//         self.machines.get_mut(&name.to_string())
+//     }
+    
+//     fn compute(&mut self, name: &str, program: &str) {
+//         self.get_mut_machine(name).expect("can't find machine").compute(program);
+//     }
+// }
+
+fn main() {
+    // // big bang
+    // let mut cloud: Cloud = Cloud::new();
+    
+    // // first machines 
+    // cloud.create_machine("/core");
+    // cloud.create_machine("/users/shorbaji");
+    
+    // // first eval
+    // let code = "1";
+
+    // cloud.compute("/core", code);    
+    let mut machine = Machine {
+        _name: String::from("/core"),
+        global_env: Env::new(),
+    };
+
+    machine.compute("");
+}
